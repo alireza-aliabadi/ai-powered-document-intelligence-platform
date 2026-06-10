@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MinIO license file
+minio.license
+
+# VS Code settings
+.vscode/
