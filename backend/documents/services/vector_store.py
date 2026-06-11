@@ -1,7 +1,5 @@
 from langchain_chroma import Chroma
 from langchain_core.embeddings import OpenAIEmbeddings
-from django.conf import settings
-
 class VectorStoreService:
     def __init__(self):
         self.embeddings = OpenAIEmbeddings(
