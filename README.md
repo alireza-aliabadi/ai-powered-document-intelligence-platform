@@ -47,10 +47,3 @@ Environment:
 ## Development
 - Run tests: `pytest` or `python -m pytest`
 - Formatting: `black .` / `isort .`
-
-## Contributing
-PRs welcome. Please open issues for features or bugs.
-
-## License
-See the project root for license information.
-
