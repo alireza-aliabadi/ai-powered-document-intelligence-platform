@@ -120,9 +120,13 @@ make logs
 
   Service           URL
   ----------------- -----------------------------
+  
   Frontend          http://localhost:3000
+
   API               http://localhost:8000
+
   Django Admin      http://localhost:8000/admin
+
   Storage Console   http://localhost:9001
 
 ## Engineering Highlights
