@@ -1,30 +1,20 @@
-# Build stage
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
-WORKDIR /app/frontend
+WORKDIR /app
 
-# Copy only package manifests first for better caching
-COPY package.json package-lock.json* ./
+COPY package*.json ./
+RUN npm ci
 
-# Install dependencies (CI mode for reproducible installs)
-RUN npm ci --silent
-
-# Copy the rest of the source and build
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
-WORKDIR /app/frontend
 
-# Use a minimal static server for production
-RUN npm install -g serve@14 --silent
+FROM nginx:alpine AS production
 
-# Copy built assets
-COPY --from=builder /app/frontend/dist ./dist
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 3000
+EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=5 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3000/ || exit 1
+HEALTHCHECK CMD wget -q -O /dev/null http://localhost || exit 1
 
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["nginx","-g","daemon off;"]

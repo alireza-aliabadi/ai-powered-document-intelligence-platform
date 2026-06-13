@@ -1,43 +1,31 @@
-FROM python:3.14-slim
+FROM python:3.12-slim AS builder
 
-ENV PYTHONUNBUFFERED=1
-WORKDIR /app/backend
+WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    postgresql-client \
-    libpq-dev \
-    curl \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir uv
 
-# Copy project files for dependency install
-COPY pyproject.toml ./
-COPY poetry.lock* ./
+COPY pyproject.toml poetry.lock* ./
+RUN uv pip install --system -r <(uv export --format requirements.txt 2>/dev/null || echo "")
 
-# Install Poetry and project dependencies (no virtualenv)
-RUN pip install --no-cache-dir "poetry>=1.6" && \
-    poetry config virtualenvs.create false && \
-    if [ -f poetry.lock ]; then \
-        poetry install --no-dev --no-interaction --no-ansi; \
-    else \
-        poetry install --no-interaction --no-ansi; \
-    fi
-
-# Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p static media logs
+FROM python:3.12-slim AS runtime
 
-# Create a non-root user and set ownership
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app/backend
+WORKDIR /app
+
+RUN useradd -m appuser && \
+    apt-get update && apt-get install -y --no-install-recommends curl postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local /usr/local
+COPY . .
+
+RUN mkdir -p static media logs && chown -R appuser:appuser /app
+
 USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -fsS http://localhost:8000/healthz || exit 1 || true
+HEALTHCHECK CMD curl -f http://localhost:8000/health/ || exit 1
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4"]
+CMD ["gunicorn","config.wsgi:application","--bind","0.0.0.0:8000"]
