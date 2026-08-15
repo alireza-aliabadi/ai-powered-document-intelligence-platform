@@ -2,30 +2,28 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir --upgrade pip
 
-COPY pyproject.toml poetry.lock* ./
-RUN uv pip install --system -r <(uv export --format requirements.txt 2>/dev/null || echo "")
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ ./
 
 FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
 RUN useradd -m appuser && \
-    apt-get update && apt-get install -y --no-install-recommends curl postgresql-client && \
+    apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local /usr/local
-COPY . .
+COPY backend/ ./
 
-RUN mkdir -p static media logs && chown -R appuser:appuser /app
+RUN mkdir -p static media logs chroma_db && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK CMD curl -f http://localhost:8000/health/ || exit 1
-
-CMD ["gunicorn","config.wsgi:application","--bind","0.0.0.0:8000"]
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2"]

@@ -2,7 +2,7 @@ name: ai-document-platform
 
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:16-alpine
     restart: unless-stopped
     env_file: .env
     environment:
@@ -32,6 +32,8 @@ services:
     image: mongo:8
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     healthcheck:
@@ -39,28 +41,39 @@ services:
     networks: [backend]
 
   aistor:
-    image: quay.io/minio/aistor/minio:latest
+    image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
-    env_file: .env
+    environment:
+      MINIO_ROOT_USER: ${AI_STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AI_STORAGE_SECRET_KEY:-minioadmin}
     volumes:
       - aistor_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9010:9000"
+      - "9011:9001"
     healthcheck:
-      test: ["CMD-SHELL","curl -f http://localhost:9000/minio/health/live"]
+      test: ["CMD-SHELL","curl -f http://localhost:9000/minio/health/live || exit 1"]
     networks: [backend]
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       target: runtime
     restart: unless-stopped
     env_file: .env
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3}
+    environment:
+      AI_STORAGE_ENDPOINT: aistor:9000
+      REDIS_URL: redis://:redis_password@redis:6379/0
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:redis_password@redis:6379/2
+      MONGO_URI: mongodb://mongodb:27017
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-2}
     ports:
-      - "8000:8000"
+      - "8001:8000"
+    volumes:
+      - chroma_data:/app/chroma_db
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,11 +85,20 @@ services:
 
   celery_worker:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       target: runtime
     restart: unless-stopped
     env_file: .env
-    command: celery -A config worker -l INFO
+    environment:
+      AI_STORAGE_ENDPOINT: aistor:9000
+      REDIS_URL: redis://:redis_password@redis:6379/0
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:redis_password@redis:6379/2
+      MONGO_URI: mongodb://mongodb:27017
+    command: celery -A config worker -l INFO -P solo
+    volumes:
+      - chroma_data:/app/chroma_db
     depends_on:
       redis:
         condition: service_healthy
@@ -84,10 +106,13 @@ services:
 
   celery_beat:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       target: runtime
     restart: unless-stopped
     env_file: .env
+    environment:
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/0
     command: celery -A config beat -l INFO
     depends_on:
       redis:
@@ -110,6 +135,7 @@ volumes:
   redis_data:
   mongodb_data:
   aistor_data:
+  chroma_data:
 
 networks:
   backend:
